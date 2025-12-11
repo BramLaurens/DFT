@@ -82,6 +82,57 @@ void MX_USB_HOST_Process(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+
+
+/**
+ * @brief Compute the Discrete Fourier Transform (DFT) magnitude at a specific frequency
+ * 
+ * @param DFT_frequency Frequency at which to compute the DFT magnitude
+ * @return float Magnitude of the DFT at the specified frequency, in volts
+ */
+float DFT_compute (float DFT_frequency)
+{
+  /* Perform DFT on incoming buffer using math.h sine and cosine tables*/
+    float Fs = 10000.0f; // Sampling frequency
+    float Nf = (float)ADC_BUFFER_SIZE;
+    float realPart = 0.0f, imagPart = 0.0f;
+
+    if(DFT_frequency == 0.0f)
+    {
+      return 0.0f; // Avoid division by zero
+    }
+    
+    for (int i = 0; i < ADC_BUFFER_SIZE; i++) 
+    {
+      float sample = (float)ADC_buffer[i];
+      float sample_volts = (sample / 4095.0f) * 3.0f; // Normalize to volts (0-3.0V)
+      float phase = 2.0f * M_PI * DFT_frequency * ((float)i / Fs);  // Phase angle
+      realPart += sample_volts * cosf(phase);
+      imagPart -= sample_volts * sinf(phase);
+    }
+    
+    // Average the real and imaginary parts
+    realPart /= Nf;
+    imagPart /= Nf;
+
+    return sqrtf(realPart*realPart + imagPart*imagPart);
+}
+
+/**
+ * @brief Calculate the Discrete Fourier Transform (DFT) of the ADC buffer, between 20 and 1000 Hz
+ * 
+ * @return void 
+ */
+void DFT_spectrum_compute ()
+{
+  for (float freq = 0.0f; freq <= 1000.0f; freq += 100.0f)
+  {
+    float magnitude = DFT_compute(freq);
+    char msg[30];
+    snprintf(msg, sizeof(msg), "F:%f,M:%.3f\r\n", freq, magnitude);
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, (uint16_t)strlen(msg), 100);
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -92,7 +143,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -108,8 +158,6 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-  int tel;
-  float MAF_value = 0.0f;
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -134,31 +182,20 @@ int main(void)
  
   while(1)
   {
-    /* Perform DFT on incoming buffer using math.h sine and cosine tables*/
-    float DFT_frequency = 1000.0f; // Frequency to be analyzed in Hz
-    float Fs = 10000.0f; // actual sampling rate in Hz (set to your timer/ADC rate)
-    float Nf = (float)ADC_BUFFER_SIZE;
-    float realPart = 0.0f, imagPart = 0.0f;
-
-    if(buffer_full)
-    {
-      for (tel = 0; tel < ADC_BUFFER_SIZE; tel++) {
-        float sample = (float)ADC_buffer[tel];
-        float phase = 2.0f * M_PI * DFT_frequency * ((float)tel / Fs);
-        realPart += sample * cosf(phase);
-        imagPart -= sample * sinf(phase); // use '-' for exp(-jωn) convention (optional)
-      }
-      realPart /= Nf;
-      imagPart /= Nf;
-      float magnitude = sqrtf(realPart*realPart + imagPart*imagPart);
-      char MSG[50];
-      snprintf(MSG, sizeof(MSG), "Magnitude at %.1f Hz: %.4f\r\n", DFT_frequency, magnitude);
-      HAL_UART_Transmit(&huart2, (uint8_t*) MSG, strlen(MSG), 100);
-      buffer_full = false;      
-    }
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
+    if(buffer_full)
+    {
+      DFT_spectrum_compute();
+      buffer_full = false;
+    }
+    
 
+    //Test for single frequency
+    // DFT_compute(1000.0f);
+    // char msg[50];
+    // snprintf(msg, sizeof(msg), "Magnitude at 1000 Hz: %.3f V\r\n", DFT_compute(1000.0f));
+    // HAL_UART_Transmit(&huart2, (uint8_t*)msg, (uint16_t)strlen(msg), 100);
     /* USER CODE BEGIN 3 */
   }
 
